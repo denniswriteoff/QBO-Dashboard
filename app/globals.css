@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Mobile safe areas and keyboard support */
+@layer utilities {
+  /* Account for Safari's safe areas and keyboard */
+  .main-content {
+    padding-bottom: env(keyboard-inset-height, 0px);
+    /* Also consider safe areas */
+    padding-bottom: calc(env(safe-area-inset-bottom) + env(keyboard-inset-height, 0px));
+  }
+
+  /* For fixed positioned elements */
+  .fixed-bottom-element {
+    bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Mobile viewport height that accounts for dynamic browser UI */
+  .mobile-viewport-height {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
+  }
+
+  /* Prevent zoom on input focus - iOS Safari zooms if font-size < 16px */
+  .no-zoom-input {
+    font-size: 16px !important;
+    transform: scale(1);
+    transform-origin: left top;
+  }
+
+  /* Ensure proper zoom behavior */
+  .zoom-container {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Handle wide content in messages */
+  .message-content {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+  }
+
+  /* Smooth horizontal scrolling for wide content */
+  .wide-content-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+  }
+
+  .wide-content-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .wide-content-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .wide-content-scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.5);
+    border-radius: 3px;
+  }
+
+  .wide-content-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(156, 163, 175, 0.7);
+  }
+}
+
