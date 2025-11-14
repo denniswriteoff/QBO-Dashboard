@@ -19,12 +19,13 @@ import {
   ArrowDown
 } from 'lucide-react'
 import logoWhite from '/public/logo_long_white.png'
+import logoBlack from '/public/logo_long_black.png'
 import ThemeToggle from './components/ThemeToggle'
 import RevenueExpensesChart from './components/RevenueExpensesChart'
 import ExpenseBreakdownChart from './components/ExpenseBreakdownChart'
 import NetProfitTrendChart from './components/NetProfitTrendChart'
 
-interface DashboardData {
+interface GeneralData {
   organisation: {
     name: string
     shortCode: string
@@ -41,15 +42,6 @@ interface DashboardData {
     value: number
     percentage: number
   }>
-  trendData: Array<{
-    month: string
-    revenue: number
-    expenses: number
-  }>
-  previousPeriodData: Array<{
-    name: string
-    value: number
-  }>
   timeframe: {
     from: string
     to: string
@@ -57,11 +49,36 @@ interface DashboardData {
   }
 }
 
+interface MonthlyData {
+  trendData: Array<{
+    month: string
+    revenue: number
+    expenses: number
+  }>
+  year: number
+}
+
+interface PreviousData {
+  previousPeriodData: Array<{
+    name: string
+    value: number
+  }>
+  timeframe: {
+    from: string | null
+    to: string | null
+    type: string
+  }
+}
+
 export default function Dashboard() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [data, setData] = useState<DashboardData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [generalData, setGeneralData] = useState<GeneralData | null>(null)
+  const [monthlyData, setMonthlyData] = useState<MonthlyData | null>(null)
+  const [previousData, setPreviousData] = useState<PreviousData | null>(null)
+  const [loadingGeneral, setLoadingGeneral] = useState(true)
+  const [loadingMonthly, setLoadingMonthly] = useState(false)
+  const [loadingPrevious, setLoadingPrevious] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [timeframe, setTimeframe] = useState<'YEAR' | 'MONTH'>('YEAR')
   const [refreshing, setRefreshing] = useState(false)
@@ -71,7 +88,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      fetchData()
+      fetchAllData()
     }
   }, [status, timeframe])
 
@@ -94,30 +111,90 @@ export default function Dashboard() {
     }
   }, [])
 
-  const fetchData = async () => {
+  const fetchAllData = async () => {
+    // Reset all data and loading states
+    setGeneralData(null)
+    setMonthlyData(null)
+    setPreviousData(null)
+    setError(null)
+
+    // Make all API calls in parallel for maximum speed
+    await Promise.allSettled([
+      fetchGeneralData(),
+      fetchMonthlyData(),
+      fetchPreviousData()
+    ])
+  }
+
+  const fetchGeneralData = async () => {
     try {
-      setLoading(true)
+      setLoadingGeneral(true)
       setError(null)
-      
-      const response = await fetch(`/api/dashboard/data?timeframe=${timeframe}`)
-      
+
+      const response = await fetch(`/api/dashboard/general?timeframe=${timeframe}`)
+
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch data')
+        throw new Error(errorData.error || 'Failed to fetch general data')
       }
-      
+
       const result = await response.json()
-      setData(result)
+      setGeneralData(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
-      setLoading(false)
+      setLoadingGeneral(false)
+    }
+  }
+
+  const fetchMonthlyData = async () => {
+    try {
+      setLoadingMonthly(true)
+
+      const currentYear = new Date().getFullYear()
+      const response = await fetch(`/api/dashboard/monthly?year=${currentYear}`)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Monthly data fetch failed:', errorData.error)
+        return // Don't throw, just skip monthly data
+      }
+
+      const result = await response.json()
+      setMonthlyData(result)
+    } catch (err) {
+      console.error('Monthly data error:', err)
+      // Don't set main error for monthly data failures
+    } finally {
+      setLoadingMonthly(false)
+    }
+  }
+
+  const fetchPreviousData = async () => {
+    try {
+      setLoadingPrevious(true)
+
+      const response = await fetch(`/api/dashboard/previous?timeframe=${timeframe}`)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Previous data fetch failed:', errorData.error)
+        return // Don't throw, just skip previous data
+      }
+
+      const result = await response.json()
+      setPreviousData(result)
+    } catch (err) {
+      console.error('Previous data error:', err)
+      // Don't set main error for previous data failures
+    } finally {
+      setLoadingPrevious(false)
     }
   }
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await fetchData()
+    await fetchAllData()
     setRefreshing(false)
   }
 
@@ -131,12 +208,14 @@ export default function Dashboard() {
 
   const handleExport = async (format: 'csv' | 'json') => {
     try {
+      // For export, we still use the original combined endpoint if it exists,
+      // otherwise we could implement export in the general API
       const response = await fetch(`/api/dashboard/export?format=${format}&timeframe=${timeframe}`)
-      
+
       if (!response.ok) {
         throw new Error('Export failed')
       }
-      
+
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -174,12 +253,12 @@ export default function Dashboard() {
   }
 
   const getSortedExpenses = () => {
-    if (!data?.expenseBreakdown) return []
-    
-    return [...data.expenseBreakdown].sort((a, b) => {
+    if (!generalData?.expenseBreakdown) return []
+
+    return [...generalData.expenseBreakdown].sort((a, b) => {
       let aValue: string | number
       let bValue: string | number
-      
+
       if (sortField === 'name') {
         aValue = a.name.toLowerCase()
         bValue = b.name.toLowerCase()
@@ -190,7 +269,7 @@ export default function Dashboard() {
         aValue = a.percentage
         bValue = b.percentage
       }
-      
+
       if (sortDirection === 'asc') {
         return aValue < bValue ? -1 : aValue > bValue ? 1 : 0
       } else {
@@ -207,26 +286,26 @@ export default function Dashboard() {
   }
 
   const getExpenseChange = (expenseName: string) => {
-    if (!data?.previousPeriodData) {
+    if (!previousData?.previousPeriodData || !generalData?.expenseBreakdown) {
       return { change: 0, hasData: false }
     }
-    
-    const previousExpense = data.previousPeriodData.find(prev => 
+
+    const previousExpense = previousData.previousPeriodData.find(prev =>
       prev.name.toLowerCase() === expenseName.toLowerCase()
     )
-    
+
     if (!previousExpense) {
       return { change: 0, hasData: false }
     }
-    
-    const currentExpense = data.expenseBreakdown.find(current => 
+
+    const currentExpense = generalData.expenseBreakdown.find(current =>
       current.name.toLowerCase() === expenseName.toLowerCase()
     )
-    
+
     if (!currentExpense) {
       return { change: 0, hasData: false }
     }
-    
+
     const change = calculatePercentageChange(currentExpense.value, previousExpense.value)
     return { change, hasData: true }
   }
@@ -263,6 +342,14 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <span className="flex items-center space-x-2">
+                <Image
+                  src={logoBlack}
+                  alt="Writeoff Logo"
+                  height={20}
+                  width={120}
+                  className="h-5 w-auto object-contain block dark:hidden"
+                  priority
+                />
                 <Image
                   src={logoWhite}
                   alt="Writeoff Logo"
@@ -349,20 +436,20 @@ export default function Dashboard() {
           </div>
         )}
 
-        {loading ? (
+        {loadingGeneral ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-sm text-gray-600 dark:text-gray-400">Loading dashboard data…</div>
           </div>
-        ) : data ? (
+        ) : generalData ? (
           <div className="space-y-6">
             {/* Timeframe Toggle */}
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <h2 className="text-lg font-medium">
-                  {data.organisation.name} Dashboard
+                  {generalData.organisation.name} Dashboard
                 </h2>
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {data.timeframe.from} to {data.timeframe.to}
+                  {generalData.timeframe.from} to {generalData.timeframe.to}
                 </span>
               </div>
               
@@ -396,7 +483,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Revenue</p>
-                    <p className="text-2xl font-semibold">{formatCurrency(data.kpis.revenue)}</p>
+                    <p className="text-2xl font-semibold">{formatCurrency(generalData.kpis.revenue)}</p>
                   </div>
                   <DollarSign className="w-8 h-8 text-green-600" />
                 </div>
@@ -406,7 +493,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Expenses</p>
-                    <p className="text-2xl font-semibold">{formatCurrency(data.kpis.expenses)}</p>
+                    <p className="text-2xl font-semibold">{formatCurrency(generalData.kpis.expenses)}</p>
                   </div>
                   <TrendingDown className="w-8 h-8 text-red-600" />
                 </div>
@@ -416,7 +503,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Net Profit</p>
-                    <p className="text-2xl font-semibold">{formatCurrency(data.kpis.netProfit)}</p>
+                    <p className="text-2xl font-semibold">{formatCurrency(generalData.kpis.netProfit)}</p>
                   </div>
                   <TrendingUp className="w-8 h-8 text-blue-600" />
                 </div>
@@ -426,7 +513,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Cash Balance</p>
-                    <p className="text-2xl font-semibold">{formatCurrency(data.kpis.cashBalance)}</p>
+                    <p className="text-2xl font-semibold">{formatCurrency(generalData.kpis.cashBalance)}</p>
                   </div>
                   <Wallet className="w-8 h-8 text-purple-600" />
                 </div>
@@ -438,20 +525,20 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">Net Margin</p>
-                  <p className="text-2xl font-semibold">{formatPercentage(data.kpis.netMargin)}</p>
+                  <p className="text-2xl font-semibold">{formatPercentage(generalData.kpis.netMargin)}</p>
                 </div>
                 <BarChart3 className="w-8 h-8 text-indigo-600" />
               </div>
             </div>
 
             {/* Revenue vs Expenses Trend Chart */}
-            <RevenueExpensesChart data={data.trendData} loading={loading} />
+            <RevenueExpensesChart data={monthlyData?.trendData || []} loading={loadingMonthly} />
 
             {/* Net Profit Trend Chart */}
-            <NetProfitTrendChart data={data.trendData} loading={loading} />
+            <NetProfitTrendChart data={monthlyData?.trendData || []} loading={loadingMonthly} />
 
             {/* Expense Breakdown Chart */}
-            <ExpenseBreakdownChart data={data.expenseBreakdown} loading={loading} />
+            <ExpenseBreakdownChart data={generalData?.expenseBreakdown || []} loading={loadingGeneral} />
 
             {/* Category Highlights Table */}
             <div className="bg-white dark:bg-[#2A2D31] border border-gray-200 dark:border-gray-800 rounded-lg p-6">
@@ -553,7 +640,7 @@ export default function Dashboard() {
                                   {isPositive ? '+' : ''}{change.toFixed(1)}%
                                 </span>
                                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                                  vs last {timeframe === 'YEAR' ? 'year' : 'month'}
+                                  vs last {generalData.timeframe.type === 'YEAR' ? 'year' : 'month'}
                                 </span>
                               </div>
                             )
